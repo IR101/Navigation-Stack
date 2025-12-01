@@ -4,9 +4,7 @@
 -->
   <include file="$(find robot_path_planning)/launch/rosserial_control.launch"/>
 
-  <!-- <include file="$(find rplidar_ros)/launch/rplidar_a1.launch" />   -->
-  <node pkg="robot_path_planning" type="laptop_to_ros.py" name="laptop_to_ros" output="screen"/> 
-
+  <include file="$(find rplidar_ros)/launch/rplidar_a1.launch" />  
 
   <!-- Load the map-->
   <include file="$(find robot_path_planning)/launch/load_map.launch"/>
