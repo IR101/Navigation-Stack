@@ -81,6 +81,16 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Python 2.7 (Requires websocket-server: pip install websocket-server)
@@ -131,11 +141,18 @@ def message_received(client, server, message):
         if not data:
             return
 
-        msg_type = data[0]   # first byte (message tag)
+        # Get the first byte as a slice (important for robust Python 2 struct/byte handling)
+        msg_type = data[0:1]
 
         # ---------- CMD_VEL ----------
-        if msg_type == 'C':
+        # Use b'C' for byte string comparison and check length is 9 (1 byte tag + 8 bytes floats)
+        if msg_type == b'C':
+            if len(data) != 9:
+                 rospy.logwarn("Received 'C' message of incorrect length: %d. Expected 9." % len(data))
+                 return
+                 
             # Unpack the linear (float) and angular (float) velocity
+            # data[1:] contains the 8 bytes of two floats
             linear_x, angular_z = struct.unpack("ff", data[1:])
 
             twist = Twist()
@@ -148,8 +165,13 @@ def message_received(client, server, message):
             else:
                 rospy.logwarn("cmd_vel publisher not initialized.")
 
+        elif msg_type == b'L':
+            # Ignore incoming LIDAR data if the client accidentally sends it back
+            rospy.logdebug("Ignoring incoming LIDAR data.")
+            pass
+            
         else:
-            rospy.logwarn("Unknown message type received from client %d" % client['id'])
+            rospy.logwarn("Unknown message type received from client %d: %s" % (client['id'], msg_type))
 
     except Exception as e:
         rospy.logerr("WS parse error (cmd_vel receiver): %s", str(e))
@@ -161,6 +183,7 @@ def clean_ranges(ranges, max_range):
     """Replace NaN or Infinity with max_range"""
     cleaned = []
     for r in ranges:
+        # Check for None, NaN, or Infinity
         if r is None or math.isnan(r) or math.isinf(r):
             cleaned.append(max_range)
         else:
@@ -179,21 +202,20 @@ def scan_callback(msg):
         ranges_clean = clean_ranges(msg.ranges, msg.range_max)
         n = len(ranges_clean)
 
-        # Prepend message tag 'L' (LIDAR), then pack data: number of points (uint32) + ranges (float32)
-        packet_data = struct.pack("I", n) + struct.pack("%sf" % n, *ranges_clean)
-        packet = 'L' + packet_data
+        # Prepend message tag 'L' (LIDAR)
+        # Pack data: number of points (uint32 'I') + ranges (float32 'f')
+        try:
+            packet_data = struct.pack("I", n) + struct.pack("%sf" % n, *ranges_clean)
+            packet = 'L' + packet_data
 
-        # Encode the binary packet as Base64 string
-        packet_b64 = base64.b64encode(packet).decode('ascii')
+            # Encode the binary packet as Base64 string
+            packet_b64 = base64.b64encode(packet)
 
-        # Send Base64 string to all clients
-        for c in clients[:]:  # copy to avoid modification during iteration
-            try:
+            # Send Base64 string to all clients
+            for c in clients[:]:  # copy to avoid modification during iteration
                 server.send_message(c, packet_b64)
-            except Exception as e:
-                rospy.logerr("WebSocket send error to client %d: %s" % (c['id'], str(e)))
-                # Remove client if sending fails
-                clients.remove(c)
+        except Exception as e:
+            rospy.logerr("Error packing or sending LIDAR data: %s" % str(e))
 
 
 # ------------------ Main ------------------
@@ -211,9 +233,10 @@ def main():
     server = WebsocketServer(host='0.0.0.0', port=WS_PORT)
     server.set_fn_new_client(new_client)
     server.set_fn_client_left(client_left)
-    server.set_fn_message_received(message_received) # <-- NEW CMD_VEL handler
+    server.set_fn_message_received(message_received)
 
     # Run WebSocket server in a separate thread
+    rospy.loginfo("Starting WebSocket Server...")
     server_thread = threading.Thread(target=server.run_forever)
     server_thread.daemon = True
     server_thread.start()
@@ -221,7 +244,7 @@ def main():
     # 3. Subscribe to LIDAR for Sending
     rospy.Subscriber(SCAN_TOPIC, LaserScan, scan_callback, queue_size=1)
 
-    rospy.loginfo("WebSocket Server started at ws://<Jetson_IP>:%d. Waiting for ROS and WS data." % WS_PORT)
+    rospy.loginfo("WebSocket Server running at ws://0.0.0.0:%d. Waiting for ROS and WS data." % WS_PORT)
     rospy.spin()  # Keep ROS running
 
 if __name__ == "__main__":
