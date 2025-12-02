@@ -96,7 +96,8 @@ import time
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
-JETSON_IP = "192.168.18.110"  # <-- **UPDATE THIS IP IF NEEDED**
+# JETSON_IP = "192.168.18.110"  # <-- **UPDATE THIS IP IF NEEDED**
+JETSON_IP = "10.75.1.177"  # <-- **UPDATE THIS IP IF NEEDED**
 WS_PORT = 8765
 
 SCAN_TOPIC = "/scan"
