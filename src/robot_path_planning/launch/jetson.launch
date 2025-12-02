@@ -10,9 +10,13 @@
     <param name="input_buffer" value="512" />
     <param name="output_buffer" value="512" />
   </node>
+  
+
+  <include file="$(find rplidar_ros)/launch/rplidar_a1.launch" />  
 
   <!--KINEMATICS TO CONVERT CMD_VEL TO LEFT RIGHT VELOCITIES-->
   <node pkg="robot_path_planning" type="hardware_interface.py" name="hardware_interface" output="screen"/> 
-
+  
+  <node pkg="robot_path_planning" type="lidar_to_laptop.py" name="lidar_to_laptop" output="screen"/> 
 
 </launch>
