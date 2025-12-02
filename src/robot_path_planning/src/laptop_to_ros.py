@@ -83,11 +83,6 @@
 
 
 
-
-
-
-
-
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Python 2.7 (Requires websocket-client: pip install websocket-client)
@@ -101,7 +96,8 @@ import time
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
-JETSON_IP = "192.168.18.110"  # <-- **UPDATE THIS IP IF NEEDED**
+# JETSON_IP = "192.168.18.110"  # <-- **UPDATE THIS IP IF NEEDED**
+JETSON_IP = "10.75.1.177"  # <-- **UPDATE THIS IP IF NEEDED**
 WS_PORT = 8765
 
 SCAN_TOPIC = "/scan"
@@ -131,7 +127,8 @@ def on_message(ws, message):
             n = struct.unpack("I", data[1:5])[0]
             
             # Unpack ranges (n * float, 4 * n bytes)
-            ranges = struct.unpack("%sf" % n, data[5:5 + 4 * n])
+            # Use Little-Endian '<' for consistency in unpacking the float array
+            ranges = struct.unpack("<%sf" % n, data[5:5 + 4 * n])
 
             if scan_pub is None:
                 rospy.logwarn("Scan publisher not ready.")
@@ -181,9 +178,9 @@ def cmd_vel_callback(msg):
         return
 
     try:
-        # Pack the message tag ('c') and two floats ('ff'). Total length 9 bytes.
+        # FIX: Use '<' (Little-Endian) prefix to guarantee 9 bytes (1 byte 'c' + 8 bytes 'ff')
         payload = struct.pack(
-            "cff",
+            "<cff",
             b'C',                 # message tag (1 byte)
             msg.linear.x,         # linear x (4 bytes)
             msg.angular.z         # angular z (4 bytes)
@@ -191,6 +188,8 @@ def cmd_vel_callback(msg):
 
         encoded = base64.b64encode(payload)
         ws_global.send(encoded)
+        rospy.logdebug("Sent cmd_vel (9 bytes): Lin: %.2f, Ang: %.2f" % (msg.linear.x, msg.angular.z))
+
 
     except Exception as e:
         rospy.logerr("Failed to send cmd_vel: %s", str(e))
