@@ -53,9 +53,9 @@
   <!-- Start the global path planner -->
   <node pkg="robot_path_planning" type="navfn_global.py" name="navfn_global" output="screen"/>
   
-  <node pkg="robot_path_planning" type="local_static.py" name="local_planner" output="screen" />
-
   <node pkg="robot_path_planning" type="local_a_star.py" name="local_a_star" output="screen" />
+  
+  <node pkg="robot_path_planning" type="local_static.py" name="local_planner" output="screen" />
 
   <node pkg="robot_path_planning" type="dynamic_obstacle.py" name="dynamic_obstacle" output="screen"/> 
 

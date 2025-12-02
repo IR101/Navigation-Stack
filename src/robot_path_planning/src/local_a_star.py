@@ -13,12 +13,13 @@ from time import time
 
 class LocalCostmapBuilder:
     def __init__(self):
-        self.grid_size_m = 4.0
-        self.grid_resolution = 0.1  # 5cm resolution
+        self.grid_size_m = 4.5
+        self.grid_resolution = 0.1  # 10cm resolution
         self.grid_cells = int(self.grid_size_m / self.grid_resolution)
         self.costmap = np.zeros((self.grid_cells, self.grid_cells), dtype=np.uint8)
-        self.robot_radius = 2.0
-        self.inflation_radius_cells = int(self.robot_radius / self.grid_resolution)
+        self.robot_radius = 0.2  # Robot radius in meters
+        self.safety_margin = 0.15  # Safety margin in meters
+        self.inflation_radius_cells = int((self.robot_radius + self.safety_margin) / self.grid_resolution)
 
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
 
@@ -40,13 +41,14 @@ class LocalCostmapBuilder:
             my = int(robot_cy + y / self.grid_resolution)
 
             if 0 <= mx < self.grid_cells and 0 <= my < self.grid_cells:
-                self.costmap[my][mx] = 1
+                self.costmap[my][mx] = 1  # mark obstacle
 
             angle += scan_msg.angle_increment
 
         self.inflate_obstacles()
 
     def inflate_obstacles(self):
+        """Inflate obstacles by robot radius + safety margin to avoid tight spaces."""
         structure = np.ones((2 * self.inflation_radius_cells + 1, 2 * self.inflation_radius_cells + 1))
         self.costmap = binary_dilation(self.costmap, structure=structure).astype(np.uint8)
 
@@ -71,7 +73,7 @@ class AStarLocalPlannerDynamic:
 
         # Time variables to control path updates
         self.last_path_time = 0
-        self.path_update_interval = 0.8  # in seconds (adjust as necessary)
+        self.path_update_interval = 5.0  # in seconds
 
         self.last_planned_path = None
         self.last_goal = None
@@ -98,10 +100,9 @@ class AStarLocalPlannerDynamic:
         return lx, ly
 
     def plan_local_path(self):
-        # Check if enough time has passed since the last update
         current_time = time()
         if current_time - self.last_path_time < self.path_update_interval:
-            return  # Skip path planning if the interval hasn't passed
+            return
 
         if self.robot_pose is None or self.global_path is None:
             rospy.logwarn_throttle(5, "Waiting for robot pose and global path...")
@@ -119,32 +120,27 @@ class AStarLocalPlannerDynamic:
         )
         _, _, yaw = euler_from_quaternion(quaternion)
 
-        # Find the closest global path point within local window
         closest_idx = self.find_closest_path_index()
-
         if closest_idx is None:
             rospy.logwarn_throttle(5, "Could not find nearby global path point!")
             return
 
-        # --- Dynamic goal selection ---
-        max_distance = self.costmap_builder.grid_size_m / 2.0  # 2.0 meters
+        # Dynamic goal selection
+        max_distance = self.costmap_builder.grid_size_m / 2.0
         rx = self.robot_pose.position.x
         ry = self.robot_pose.position.y
 
         selected_idx = closest_idx
-
         for i in range(closest_idx, len(self.global_path)):
             px = self.global_path[i].pose.position.x
             py = self.global_path[i].pose.position.y
             distance = math.hypot(px - rx, py - ry)
-
             if distance <= max_distance:
                 selected_idx = i
             else:
                 break
 
         goal_pose_local = self.global_path[selected_idx].pose
-
         local_goal_x, local_goal_y = self.world_to_local(
             goal_pose_local.position.x,
             goal_pose_local.position.y,
@@ -156,7 +152,6 @@ class AStarLocalPlannerDynamic:
         goal_mx = int(robot_cx + local_goal_x / self.costmap_builder.grid_resolution)
         goal_my = int(robot_cy + local_goal_y / self.costmap_builder.grid_resolution)
 
-        # Clip inside grid
         goal_mx = max(0, min(costmap.shape[1] - 1, goal_mx))
         goal_my = max(0, min(costmap.shape[0] - 1, goal_my))
 
@@ -166,9 +161,9 @@ class AStarLocalPlannerDynamic:
 
         if path:
             self.publish_path(path)
-            self.last_path_time = current_time  # Update last path time
-            self.last_planned_path = path  # Save the last path
-            self.last_goal = goal_pose_local  # Save the last goal
+            self.last_path_time = current_time
+            self.last_planned_path = path
+            self.last_goal = goal_pose_local
         else:
             rospy.logwarn("Could not find local path to goal.")
 
@@ -211,7 +206,12 @@ class AStarLocalPlannerDynamic:
 
                 if 0 <= neighbor[0] < grid.shape[1] and 0 <= neighbor[1] < grid.shape[0]:
                     if grid[neighbor[1]][neighbor[0]] != 0:
-                        continue
+                        continue  # obstacle
+
+                    # Prevent diagonal through corners
+                    if dx != 0 and dy != 0:
+                        if grid[current[1]+dy][current[0]] != 0 or grid[current[1]][current[0]+dx] != 0:
+                            continue
 
                     move_cost = math.hypot(dx, dy)
                     tentative_g = g_score[current] + move_cost
@@ -265,7 +265,7 @@ class AStarLocalPlannerDynamic:
         rospy.loginfo_throttle(2, "Published local path with {} points.".format(len(path)))
 
     def run(self):
-        rate = rospy.Rate(10.0)  # 2 Hz
+        rate = rospy.Rate(10.0)  # 10 Hz
         while not rospy.is_shutdown():
             self.plan_local_path()
             rate.sleep()
