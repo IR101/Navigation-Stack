@@ -43,11 +43,6 @@
 
   <node pkg="robot_path_planning" type="rosbridge.py" name="rosbridge" output="screen" />
 
-  <!-- <node pkg="robot_path_planning" type="stream_rviz.py" name="stream_rviz" output="screen" /> -->
-
-  <!-- <node pkg="robot_path_planning" type="hardware_interface.py" name="hardware_interface" output="screen"/>  -->
-  
-
 
  <!-- Spawn the diff_drive_controller-->
   <node name="diff_drive_controller" pkg="controller_manager" type="spawner" args="diff_drive_controller" output="screen" >
